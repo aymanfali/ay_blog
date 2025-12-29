@@ -1,0 +1,42 @@
+{
+    "sign_out" : "Sign Out",
+    "profile" : "Profile",
+    "dashboard" : "Dashboard",
+    "users" : "Users",
+    "blog" : "Blog",
+    "posts" : "Posts",
+    "categories" : "Categories",
+    "settings" : "Settings",
+    "preferences" : "Preferences",
+    "visit_website" : "Visit Website",
+    "login_title" : "Login",
+    "login_subtitle" : "Enter your credentials to login to your account",
+    "email" : "Email",
+    "password" : "Password",
+    "forgot_password" : "Forgot your password?",
+    "logging_in" : "Logging in ...",
+    "continue_with" : "Or continue with",
+    "have_no_account" : "Don't have an account?",
+    "signup_title" : "Create your account",
+    "signup_subtitle" : "Fill in the form to create your account",
+    "name" : "Name",
+    "email_note" : "We'll use this to contact you. We will not share your email with anyone else.",
+    "password_rule" : "Must be at least 8 characters long.",
+    "confirm_password" : "Confirm Password",
+    "have_account" : "Already have an account?",
+    "agree_to": "By creating an account, you agree to our",
+    "terms_of_services" : "Terms of Service",
+    "privacy_policy" : "Privacy Policy",
+
+    "nav" : {
+        "home" : "Home",
+        "about" : "About",
+        "blog" : "Blog",
+        "contact" : "Contact"
+    },
+
+    "save" : "Save",
+    "saving" : "Saving",
+    "loading" : "Loading",
+    "bio" : "Bio"
+}

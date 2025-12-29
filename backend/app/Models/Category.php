@@ -2,25 +2,29 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTranslations;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Category extends Model
 {
-    use SoftDeletes;
+    use HasTranslations, SoftDeletes;
+
+    protected $translationModel = CategoryTranslation::class;
 
     protected $fillable = [
-        'id',
-        'name',
-        'slug',
         'image',
-        'description',
         'status',
-        'user_id',
+        'published_at',
     ];
 
-    public function user(){
-        return $this->belongsTo(User::class);
+    public function posts()
+    {
+        return $this->hasMany(Post::class);
+    }
+
+    public function scopePublished($query)
+    {
+        return $query->where('status', 'published');
     }
 }

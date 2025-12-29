@@ -1,0 +1,35 @@
+<script lang="ts">
+export const description = 'A two column login page with a cover image.'
+</script>
+
+<script setup lang="ts">
+import AppLogo from '@/components/AppLogo.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue';
+import { RouterView } from 'vue-router'
+</script>
+
+<template>
+  <div class="grid min-h-svh lg:grid-cols-2">
+    <div class="flex flex-col gap-4 p-10">
+      <div class="flex justify-between gap-2">
+        <div class="md:hidden"></div>
+        <router-link to="/" class="flex items-center gap-2 font-medium">
+          <AppLogo :show-name="true" />
+        </router-link>
+        <LanguageSwitcher/>
+      </div>
+      <div class="flex flex-1 items-center justify-center">
+        <div class="w-full max-w-xs">
+          <RouterView />
+        </div>
+      </div>
+    </div>
+    <div class="bg-muted relative hidden lg:block">
+      <img
+        src="../../../../public/placeholder.svg"
+        alt="Image"
+        class="absolute inset-0 h-full w-full object-cover dark:brightness-[0.2] dark:grayscale"
+      />
+    </div>
+  </div>
+</template>

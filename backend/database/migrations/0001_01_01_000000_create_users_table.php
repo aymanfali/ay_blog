@@ -17,14 +17,28 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            $table->string('slug')->unique();
+            $table->text('bio')->nullable();
+            $table->date('birth_date')->nullable();
+            $table->string('avatar')->nullable();
+            $table->string('banner')->nullable();
+            $table->enum('status', ['active', 'inactive'])->default('active');
+            $table->string('oauth_provider')->nullable();
+            $table->string('oauth_id')->nullable();
             $table->rememberToken();
             $table->timestamps();
+            $table->softDeletes();
+
+            $table->index('status');
+            $table->index(['oauth_provider', 'oauth_id']);
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
             $table->string('email')->primary();
             $table->string('token');
             $table->timestamp('created_at')->nullable();
+
+            $table->index('created_at');
         });
 
         Schema::create('sessions', function (Blueprint $table) {

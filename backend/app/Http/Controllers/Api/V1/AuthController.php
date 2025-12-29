@@ -3,31 +3,31 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Validation\Rules;
-use App\Models\User;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    use ApiResponseTrait;
+
     /**
      * Register a new user
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
      */
     public function register(Request $request)
     {
-        try {
-            $validated = $request->validate([
-                'name' => ['required', 'string', 'max:255'],
-                'email' => ['required', 'string', 'email', 'max:255', 'unique:users'],
-                'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            ]);
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
 
-            Log::info('Attempting to create user', ['email' => $request->email]);
+        try {
+            DB::beginTransaction();
 
             $user = User::create([
                 'name' => $validated['name'],
@@ -35,83 +35,124 @@ class AuthController extends Controller
                 'password' => Hash::make($validated['password']),
             ]);
 
-            Log::info('User created successfully', ['user_id' => $user->id]);
+            $token = $user->createToken('api_token')->plainTextToken;
 
-            $token = $user->createToken('auth_token')->plainTextToken;
+            DB::commit();
 
-            return response()->json([
-                'message' => 'User registered successfully',
-                'access_token' => $token,
-                'token_type' => 'Bearer',
-                'user' => $user
-            ], 201);
-
-        } catch (\Exception $e) {
-            Log::error('Registration error: ' . $e->getMessage(), [
-                'exception' => $e,
-                'request' => $request->all()
-            ]);
-            
-            return response()->json([
-                'message' => 'Registration failed',
-                'error' => $e->getMessage()
-            ], 500);
+            return $this->created([
+                'user' => $user,
+                'token' => $token,
+            ], 'messages.user_registered');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
     }
 
+
     /**
-     * Authenticate user and create token
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * Login user
      */
     public function login(Request $request)
     {
-        $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required'],
-            'remember_me' => ['boolean'],
+        $validated = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string',
         ]);
 
-        if (!Auth::attempt($request->only('email', 'password'), $request->remember_me)) {
-            return response()->json([
-                'message' => 'Invalid login details'
-            ], 401);
+        $user = User::where('email', $validated['email'])->first();
+
+        if (! $user || ! Hash::check($validated['password'], $user->password)) {
+            return $this->unauthorized(__('messages.invalid_credentials'));
         }
 
-        $user = User::where('email', $request->email)->firstOrFail();
-        $token = $user->createToken('auth_token')->plainTextToken;
+        // 🔴 BLOCK INACTIVE USERS
+        if ($user->status !== 'active') {
+            return $this->unauthorized(__('messages.account_inactive'));
+        }
 
-        return response()->json([
-            'access_token' => $token,
-            'token_type' => 'Bearer',
-            'user' => $user
-        ]);
+        // Revoke previous tokens
+        $user->tokens()->delete();
+
+        $token = $user->createToken('api_token')->plainTextToken;
+
+        return $this->ok([
+            'user' => $user,
+            'token' => $token,
+        ], 'messages.login_success');
     }
 
     /**
-     * Log the user out (Revoke the token)
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * Logout user
      */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
 
-        return response()->json([
-            'message' => 'Successfully logged out'
-        ]);
+        return $this->ok(null, 'messages.logout_success');
     }
 
     /**
-     * Get the authenticated User
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
+     * Show current user profile
      */
-    public function user(Request $request)
+    public function profile(Request $request)
     {
-        return response()->json($request->user());
+        $user = $request->user();
+
+        return $this->ok($user, 'messages.user_profile');
+    }
+
+    /**
+     * Update profile
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'name' => 'sometimes|string|max:255',
+            'avatar' => 'sometimes|file|image|mimes:jpeg,png,jpg,webp|max:8192',
+            'banner' => 'sometimes|file|image|mimes:jpeg,png,jpg,webp|max:8192',
+            'bio' => 'sometimes|string',
+            'birth_date' => 'sometimes|date',
+            'password' => 'sometimes|string|min:8|confirmed',
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            if (isset($validated['password'])) {
+                $validated['password'] = Hash::make($validated['password']);
+            }
+
+            if (isset($validated['name'])) {
+                $validated['slug'] = $user->generateSlug(
+                    $validated['name'],
+                    app()->getLocale()
+                );
+            }
+
+            // Handle avatar upload
+            if ($request->hasFile('avatar')) {
+                $avatarPath = $request->file('avatar')->store('avatars', 'public');
+                $validated['avatar'] = '/storage/' . $avatarPath;
+            }
+
+            // Handle banner upload
+            if ($request->hasFile('banner')) {
+                $bannerPath = $request->file('banner')->store('banners', 'public');
+                $validated['banner'] = '/storage/' . $bannerPath;
+            }
+
+
+            $user->update($validated);
+
+            DB::commit();
+
+            return $this->ok($user, 'messages.profile_updated');
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 }

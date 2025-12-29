@@ -4,162 +4,144 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CategoryController extends Controller
 {
+    use ApiResponseTrait;
+
     /**
-     * Display a listing of the resource.
+     * List categories
      */
-    public function index(): JsonResponse
+    public function index(Request $request)
     {
-        $categories = Category::latest()->paginate(10);
-        return response()->json([
-            'status' => true,
-            'data' => $categories
-        ]);
+        $categories = Category::withTranslation()
+            ->with([
+                'posts' => fn($q) => $q->published()
+            ])
+            ->when(
+                $request->filled('status'),
+                fn($q) => $q->where('status', $request->status)
+            )
+            ->paginate($request->integer('per_page', 15));
+
+        return $this->ok($categories, 'messages.success');
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Show single category
      */
-    public function store(Request $request): JsonResponse
+    public function show(Category $category)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:categories',
-            'description' => 'nullable|string',
-            'status' => 'required|in:published,draft',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        $category->load([
+            'translation',
+            'posts' => fn($q) => $q->published()
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $data = $request->only(['name', 'description', 'status']);
-        $data['id'] = (string) \Illuminate\Support\Str::uuid();
-        $data['slug'] = Str::slug($data['name']);
-        $data['user_id'] = Auth::id();
-
-        if ($request->hasFile('image')) {
-            $image = $request->file('image');
-            $imageName = time() . '.' . $image->getClientOriginalExtension();
-            $image->move(public_path('images/categories'), $imageName);
-            $data['image'] = 'images/categories/' . $imageName;
-        }
-
-        $category = Category::create($data);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Category created successfully',
-            'data' => $category
-        ], 201);
+        return $this->ok($category, 'messages.success');
     }
 
     /**
-     * Display the specified resource.
+     * Store category
      */
-    public function show(string $id): JsonResponse
+    public function store(Request $request)
     {
-        $category = Category::find($id);
-        
-        if (!$category) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Category not found'
-            ], 404);
-        }
-
-        return response()->json([
-            'status' => true,
-            'data' => $category
-        ]);
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id): JsonResponse
-    {
-        $category = Category::find($id);
-        
-        if (!$category) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Category not found'
-            ], 404);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:categories,name,' . $id,
-            'description' => 'nullable|string',
-            'status' => 'required|in:published,draft',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+        $validated = $request->validate([
+            'name.en' => 'required|string|max:255',
+            'name.ar' => 'required|string|max:255',
+            'image' => 'nullable|string|max:255',
+            'status' => 'required|in:pending,published,draft',
+            'published_at' => 'nullable|date',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json([
-                'status' => false,
-                'errors' => $validator->errors()
-            ], 422);
-        }
+        try {
+            DB::beginTransaction();
 
-        $data = $request->only(['name', 'description', 'status']);
-        $data['slug'] = Str::slug($data['name']);
+            $category = Category::create([
+                'image' => $validated['image'] ?? null,
+                'status' => $validated['status'],
+                'published_at' => $validated['published_at'] ?? null,
+            ]);
 
-        if ($request->hasFile('image')) {
-            // Delete old image if exists
-            if ($category->image && file_exists(public_path($category->image))) {
-                unlink(public_path($category->image));
+            foreach ($validated['name'] as $locale => $name) {
+                $category->translations()->create([
+                    'locale' => $locale,
+                    'name' => $name,
+                ]);
             }
-            
-            $image = $request->file('image');
-            $imageName = time() . '.' . $image->getClientOriginalExtension();
-            $image->move(public_path('images/categories'), $imageName);
-            $data['image'] = 'images/categories/' . $imageName;
+
+            DB::commit();
+
+            return $this->created(
+                $category->load('translations'),
+                'messages.category_created'
+            );
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        $category->update($data);
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Category updated successfully',
-            'data' => $category
-        ]);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Update category
      */
-    public function destroy(string $id): JsonResponse
+    public function update(Request $request, Category $category)
     {
-        $category = Category::find($id);
-        
-        if (!$category) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Category not found'
-            ], 404);
-        }
+        $validated = $request->validate([
+            'name.en' => 'sometimes|string|max:255',
+            'name.ar' => 'sometimes|string|max:255',
+            'image' => 'nullable|string|max:255',
+            'status' => 'sometimes|in:pending,published,draft',
+            'published_at' => 'nullable|date',
+        ]);
 
-        // Delete image if exists
-        if ($category->image && file_exists(public_path($category->image))) {
-            unlink(public_path($category->image));
-        }
+        try {
+            DB::beginTransaction();
 
+            $category->update($request->only([
+                'image',
+                'status',
+                'published_at'
+            ]));
+
+            if (isset($validated['name'])) {
+                foreach ($validated['name'] as $locale => $name) {
+                    $category->translations()->updateOrCreate(
+                        ['locale' => $locale],
+                        ['name' => $name]
+                    );
+                }
+            }
+
+            DB::commit();
+
+            return $this->ok(
+                $category->load('translations'),
+                'messages.category_updated'
+            );
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Delete category
+     */
+    public function destroy(Category $category)
+    {
+        $deletedId = $category->id;
         $category->delete();
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Category deleted successfully'
-        ]);
+        return $this->deletedResponse(
+            null,
+            [
+                'deleted_id' => $deletedId,
+                'deleted_at' => now()->toISOString(),
+            ],
+            'messages.category_deleted'
+        );
     }
 }
