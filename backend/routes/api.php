@@ -1,18 +1,46 @@
 <?php
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\V1\{
+    AuthController,
+    BookmarkController,
+    CategoryController,
+    CommentController,
+    FallbackController,
+    PostController,
+    ReactionController,
+    SettingController,
+    TagController,
+    UserController,
+};
+use App\Http\Middleware\CheckUserActive;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes
-|--------------------------------------------------------------------------
-*/
+Route::prefix('v1')->middleware('throttle:60,1')->group(function () {
 
-// API Version 1 Routes
-require __DIR__ . '/api_v1.php';
+    // authentication routes
+    Route::prefix('auth')->group(function () {
+        Route::post('/register', [AuthController::class, 'register']);
+        Route::post('/login', [AuthController::class, 'login']);
 
-// Default API route (kept for backward compatibility)
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
+        Route::middleware('auth:sanctum')->group(function () {
+            Route::post('/logout', [AuthController::class, 'logout']);
+            Route::get('/profile', [AuthController::class, 'profile']);
+            Route::put('/profile', [AuthController::class, 'updateProfile']);
+        });
+    });
+
+    // protected routes
+    Route::middleware(['auth:sanctum', CheckUserActive::class])->group(function () {
+        Route::apiResource('categories', CategoryController::class);
+        Route::apiResource('posts', PostController::class);
+        Route::apiResource('tags', TagController::class);
+        Route::apiResource('comments', CommentController::class);
+        Route::apiResource('reactions', ReactionController::class);
+        Route::apiResource('bookmarks', BookmarkController::class)->except(['update']);
+        Route::apiResource('settings', SettingController::class);
+        Route::apiResource('users', UserController::class);
+    });
+
+    // fallback route
+    Route::fallback(FallbackController::class);
 });

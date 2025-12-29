@@ -3,15 +3,17 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Laravel\Sanctum\HasApiTokens;
+
+use App\Models\Concerns\GeneratesSlug;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasFactory, Notifiable, HasApiTokens, GeneratesSlug;
 
     /**
      * The attributes that are mass assignable.
@@ -22,6 +24,13 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'bio',
+        'birth_date',
+        'avatar',
+        'banner',
+        'status',
+        'oauth_provider',
+        'oauth_id',
     ];
 
     /**
@@ -47,8 +56,47 @@ class User extends Authenticatable
         ];
     }
 
-    public function category()
+    public function posts()
     {
-        return $this->hasMany(Category::class);
+        return $this->hasMany(Post::class);
+    }
+
+    public function comments()
+    {
+        return $this->hasMany(Comment::class);
+    }
+
+    public function reactions()
+    {
+        return $this->hasMany(Reaction::class);
+    }
+
+    public function bookmarks()
+    {
+        return $this->hasMany(Bookmark::class);
+    }
+
+    protected static function booted()
+    {
+        static::saving(function ($user) {
+            if ($user->isDirty('name')) {
+                $user->slug = $user->generateSlug(
+                    $user->name,
+                    app()->getLocale()
+                );
+            }
+        });
+
+        static::updated(function ($user) {
+            // Generate slug if name changed (existing logic)
+            if ($user->isDirty('name')) {
+                $user->slug = $user->generateSlug($user->name, app()->getLocale());
+            }
+
+            // Revoke tokens if user is set to inactive
+            if ($user->isDirty('status') && $user->status === 'inactive') {
+                $user->tokens()->delete();
+            }
+        });
     }
 }
